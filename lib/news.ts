@@ -143,15 +143,38 @@ Return ONLY the bullet points, one per line, starting with a dash (-). No intro 
   }
 }
 
-// ---------- Deduplicate by title similarity ----------
-function dedupe(articles: RawArticle[]): RawArticle[] {
-  const seen = new Set<string>();
+// ---------- Normalise title for comparison ----------
+function normaliseTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().slice(0, 60);
+}
+
+// ---------- Deduplicate within a single fetch (by URL and title) ----------
+function dedupeRaw(articles: RawArticle[]): RawArticle[] {
+  const seenUrls  = new Set<string>();
+  const seenTitles = new Set<string>();
   return articles.filter(a => {
-    const key = a.title.toLowerCase().slice(0, 40);
-    if (seen.has(key)) return false;
-    seen.add(key);
+    const normTitle = normaliseTitle(a.title);
+    if (seenUrls.has(a.url) || seenTitles.has(normTitle)) return false;
+    seenUrls.add(a.url);
+    seenTitles.add(normTitle);
     return true;
   });
+}
+
+// ---------- Check if article is actually finance-related ----------
+const FINANCE_KEYWORDS = [
+  'stock', 'share', 'nifty', 'sensex', 'bse', 'nse', 'market', 'invest',
+  'mutual fund', 'sip', 'nav', 'equity', 'debt fund',
+  'gold', 'silver', 'mcx', 'commodity', 'price',
+  'rbi', 'repo rate', 'inflation', 'gdp', 'economy', 'fiscal', 'budget',
+  'sebi', 'ipo', 'dividend', 'earnings', 'revenue', 'profit', 'loss',
+  'rupee', 'forex', 'currency', 'bond', 'yield', 'interest rate',
+  'bank', 'nbfc', 'loan', 'credit', 'finance', 'financial',
+];
+
+function isFinanceRelated(article: RawArticle): boolean {
+  const text = `${article.title} ${article.description}`.toLowerCase();
+  return FINANCE_KEYWORDS.some(kw => text.includes(kw));
 }
 
 // ---------- Main export ----------
@@ -162,7 +185,9 @@ export async function fetchNewsForCategory(category: Category): Promise<NewsCard
     fetchFromGNews(category),
   ]);
 
-  const combined = dedupe([...newsapi, ...marketaux, ...gnews]).slice(0, 8);
+  const combined = dedupeRaw([...newsapi, ...marketaux, ...gnews])
+    .filter(isFinanceRelated) // drop non-finance articles before calling Claude
+    .slice(0, 8);
 
   const cards = await Promise.all(
     combined.map(async (article, i) => {
@@ -186,6 +211,17 @@ export async function fetchAllNews(): Promise<NewsCard[]> {
   const categories: Category[] = ['Stocks & Equity', 'Mutual Funds', 'Gold & Silver', 'Economy & RBI'];
   const results = await Promise.all(categories.map(fetchNewsForCategory));
   const all = results.flat();
+
+  // ---------- Global dedupe across ALL categories by title ----------
+  // Prevents same article appearing under multiple category labels
+  const globalSeenTitles = new Set<string>();
+  const dedupedAll = all.filter(card => {
+    const norm = normaliseTitle(card.title);
+    if (globalSeenTitles.has(norm)) return false;
+    globalSeenTitles.add(norm);
+    return true;
+  });
+
   // Sort newest first
-  return all.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  return dedupedAll.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 }

@@ -38,7 +38,31 @@ export default function NewsFeed() {
     }
   }, []);
 
-  useEffect(() => { fetchNews(); }, [fetchNews]);
+  // Silent background refresh — runs every 15 minutes
+  // No loading spinner — just quietly adds new articles to the top
+  const silentRefresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/news');
+      if (!res.ok) return;
+      const data = await res.json();
+      const incoming: NewsCardType[] = data.news || [];
+      setAllNews(prev => {
+        const existingIds = new Set(prev.map(n => n.id));
+        const newArticles = incoming.filter(n => !existingIds.has(n.id));
+        if (newArticles.length === 0) return prev;
+        return [...newArticles, ...prev];
+      });
+      setLastUpdated(data.updatedAt);
+    } catch {
+      // Silently fail — never show an error for background refresh
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNews();
+    const interval = setInterval(silentRefresh, 15 * 60 * 1000); // every 15 mins
+    return () => clearInterval(interval);
+  }, [fetchNews, silentRefresh]);
 
   const filtered = allNews
     .filter(n => category === 'All' || n.category === category)
@@ -203,8 +227,22 @@ export default function NewsFeed() {
           </button>
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)' }}>
-          No news found for this category today.
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '48px 24px',
+            background: 'var(--surface)',
+            borderRadius: 'var(--radius)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          <p style={{ fontSize: '28px', marginBottom: '12px' }}>🌅</p>
+          <p style={{ fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>
+            Today&apos;s news is on its way
+          </p>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            Fresh news for {category === 'All' ? 'all categories' : category} will appear here as it gets published today. Check back in a little while.
+          </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
