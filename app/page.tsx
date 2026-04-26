@@ -2,7 +2,7 @@ import NewsFeed from '@/components/NewsFeed';
 
 export default function Home() {
   return (
-    <div style={{ minHeight: '100vh', minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
       <header style={{ padding: '20px 0 0', textAlign: 'center' }}>
         <div style={{ paddingInline: 'max(16px, env(safe-area-inset-left))' }}>
           <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4 }}>
