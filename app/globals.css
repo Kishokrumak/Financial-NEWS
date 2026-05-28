@@ -1,66 +1,26 @@
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --primary: #3176FF;
-  --primary-light: #EBF1FF;
-  --primary-dark: #1A5CE0;
-  --secondary: #4A69A6;
-  --accent: #FF8C42;
-  --bg: #F5F7FA;
-  --surface: #FFFFFF;
-  --surface-2: #F0F3F8;
-  --text-primary: #0D1B2A;
-  --text-secondary: #4A5568;
-  --text-muted: #8A96A3;
+  --primary: #3176FF; --primary-light: #EBF1FF; --primary-dark: #1A5CE0;
+  --secondary: #4A69A6; --accent: #FF8C42;
+  --bg: #F5F7FA; --surface: #FFFFFF; --surface-2: #F0F3F8;
+  --text-primary: #0D1B2A; --text-secondary: #4A5568; --text-muted: #8A96A3;
   --border: #E2E8F0;
-  --shadow-sm: 0 1px 3px rgba(13,27,42,0.06), 0 1px 2px rgba(13,27,42,0.04);
+  --shadow-sm: 0 1px 3px rgba(13,27,42,0.06);
   --shadow-md: 0 4px 16px rgba(13,27,42,0.08), 0 2px 6px rgba(13,27,42,0.05);
-  --radius: 16px;
-  --radius-sm: 8px;
-  --font-display: 'Instrument Serif', Georgia, serif;
-  --font-body: 'DM Sans', system-ui, sans-serif;
+  --radius: 16px; --radius-sm: 8px;
+  --font-title: 'Inter', system-ui, sans-serif;
+  --font-body:  'DM Sans', system-ui, sans-serif;
 }
-
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
-
-body {
-  font-family: var(--font-body);
-  background: var(--bg);
-  color: var(--text-primary);
-  min-height: 100vh;
-  min-height: 100dvh;
-  -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
-}
-
+body { font-family: var(--font-body); background: var(--bg); color: var(--text-primary); min-height: 100dvh; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
 .cat-stocks  { background: #EBF1FF; color: #3176FF; }
 .cat-mutual  { background: #EDF7F0; color: #1E8A4C; }
 .cat-gold    { background: #FFF8E8; color: #B07E0A; }
 .cat-economy { background: #FFF0E8; color: #C4531A; }
-
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes shimmer {
-  0%   { background-position: -200% 0; }
-  100% { background-position:  200% 0; }
-}
-
-.animate-fade-up { animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-
-.skeleton {
-  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: var(--radius-sm);
-}
+@keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+.animate-fade-up { animation: fadeUp 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+.skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: var(--radius-sm); }

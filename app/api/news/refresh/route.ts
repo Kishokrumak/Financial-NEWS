@@ -1,19 +1,14 @@
 import { NextResponse } from 'next/server';
-import { forceRefreshNews } from '@/lib/news';
+import { incrementalRefresh } from '@/lib/news';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    console.log('Midnight cron triggered — refreshing news cache...');
-    const { news, builtAt } = await forceRefreshNews();
-    return NextResponse.json({
-      success: true,
-      articleCount: news.length,
-      builtAt,
-    });
+    const { news, builtAt, newCount } = await incrementalRefresh();
+    return NextResponse.json({ news, updatedAt: builtAt, newCount });
   } catch (error) {
-    console.error('Refresh failed:', error);
+    console.error('Incremental refresh failed:', error);
     return NextResponse.json({ error: 'Refresh failed' }, { status: 500 });
   }
 }

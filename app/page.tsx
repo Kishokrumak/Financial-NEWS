@@ -6,7 +6,7 @@ export default function Home() {
       <header style={{ padding: '20px 0 0', textAlign: 'center' }}>
         <div style={{ paddingInline: 'max(16px, env(safe-area-inset-left))' }}>
           <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4 }}>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(32px, 8vw, 44px)', fontWeight: 400, letterSpacing: '-0.02em', color: 'var(--text-primary)', lineHeight: 1 }}>
+            <h1 style={{ fontFamily: 'var(--font-title)', fontSize: 'clamp(32px, 8vw, 44px)', fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--text-primary)', lineHeight: 1 }}>
               FEWS
             </h1>
             <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', marginBottom: 6, flexShrink: 0 }} />
