@@ -424,7 +424,7 @@ export async function incrementalRefresh(): Promise<{ news: NewsCard[]; newsTami
   return { news: sortedEn, newsTamil: sortedTa, builtAt: new Date().toISOString(), newCount: sortedEn.length - previousCount };
 }
 
-export async function forceRefreshNews(): Promise<{ news: NewsCard[]; newsTamil: NewsCard[]; builtAt: string }> {
+export async function forceRefreshNews(): Promise<{ news: NewsCard[]; newsTamil: NewsCard[]; builtAt: string; newCount: number }> {
   console.log('[FEWS] Full rebuild — clearing KV cache...');
   await clearCache();
 
@@ -459,5 +459,5 @@ export async function forceRefreshNews(): Promise<{ news: NewsCard[]; newsTamil:
   });
 
   console.log(`[FEWS] Rebuilt with ${sortedEn.length} articles.`);
-  return { news: sortedEn, newsTamil: sortedTa, builtAt };
+  return { news: sortedEn, newsTamil: sortedTa, builtAt, newCount: sortedEn.length };
 }
