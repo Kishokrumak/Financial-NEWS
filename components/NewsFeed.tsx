@@ -5,19 +5,19 @@ import NewsCard from './NewsCard';
 import SkeletonCard from './SkeletonCard';
 import type { NewsCard as NewsCardType, Category } from '@/lib/news';
 
-const CATEGORIES: { label: string; value: Category | 'All' }[] = [
-  { label: 'All',           value: 'All' },
-  { label: 'Stocks',        value: 'Stocks & Equity' },
-  { label: 'Mutual Funds',  value: 'Mutual Funds' },
-  { label: 'Gold & Silver', value: 'Gold & Silver' },
-  { label: 'Economy',       value: 'Economy & RBI' },
+type Language = 'en' | 'ta';
+
+const CATEGORIES: { label: string; labelTa: string; value: Category | 'All' }[] = [
+  { label: 'All',           labelTa: 'அனைத்தும்',     value: 'All' },
+  { label: 'Stocks',        labelTa: 'பங்குகள்',       value: 'Stocks & Equity' },
+  { label: 'Mutual Funds',  labelTa: 'மியூச்சுவல் ஃபண்ட்', value: 'Mutual Funds' },
+  { label: 'Gold & Silver', labelTa: 'தங்கம் & வெள்ளி', value: 'Gold & Silver' },
+  { label: 'Economy',       labelTa: 'பொருளாதாரம்',    value: 'Economy & RBI' },
 ];
 
 function formatUpdated(iso: string) {
   if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 export default function NewsFeed() {
@@ -27,14 +27,15 @@ export default function NewsFeed() {
   const [category, setCategory]       = useState<Category | 'All'>('All');
   const [sort, setSort]               = useState<'newest' | 'oldest'>('newest');
   const [lastUpdated, setLastUpdated] = useState('');
-  const [newBadge, setNewBadge]       = useState(0); // shows "+N new" badge when new articles arrive
+  const [newBadge, setNewBadge]       = useState(0);
+  const [lang, setLang]               = useState<Language>('en');
+  const [langLoading, setLangLoading] = useState(false);
 
-  // ── Initial load — served from cache, never calls Claude ──
-  const fetchNews = useCallback(async () => {
+  const fetchNews = useCallback(async (language: Language = 'en') => {
     setLoading(true);
     setError('');
     try {
-      const res  = await fetch('/api/news');
+      const res  = await fetch(`/api/news?lang=${language}`);
       if (!res.ok) throw new Error('Failed');
       const data = await res.json();
       setAllNews(data.news || []);
@@ -46,33 +47,51 @@ export default function NewsFeed() {
     }
   }, []);
 
-  // ── Silent incremental refresh every 15 mins ──
-  // Hits /api/news/refresh which only processes NEW articles not already in cache
-  // Never re-calls Claude for existing articles
-  const silentRefresh = useCallback(async () => {
+  // Language switch — re-fetch in chosen language
+  const handleLangToggle = async () => {
+    const newLang: Language = lang === 'en' ? 'ta' : 'en';
+    setLang(newLang);
+    setLangLoading(true);
+    setError('');
     try {
-      const res  = await fetch('/api/news/refresh');
+      const res  = await fetch(`/api/news?lang=${newLang}`);
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      setAllNews(data.news || []);
+      setLastUpdated(data.updatedAt);
+    } catch {
+      setError('Could not load news. Please try again.');
+    } finally {
+      setLangLoading(false);
+    }
+  };
+
+  // Silent 15-min refresh — passes current language
+  const silentRefresh = useCallback(async (language: Language) => {
+    try {
+      const res  = await fetch(`/api/news/refresh?lang=${language}`);
       if (!res.ok) return;
       const data = await res.json();
       const incoming: NewsCardType[] = data.news || [];
       setAllNews(prev => {
-        const existingIds  = new Set(prev.map(n => n.id));
-        const newArticles  = incoming.filter(n => !existingIds.has(n.id));
+        const existingIds = new Set(prev.map(n => n.id));
+        const newArticles = incoming.filter(n => !existingIds.has(n.id));
         if (newArticles.length === 0) return prev;
-        setNewBadge(b => b + newArticles.length); // show badge
-        return [...newArticles, ...prev];          // newest at top
+        setNewBadge(b => b + newArticles.length);
+        return [...newArticles, ...prev];
       });
       setLastUpdated(data.updatedAt);
-    } catch {
-      // Silently fail — never show error on background refresh
-    }
+    } catch {}
   }, []);
 
   useEffect(() => {
-    fetchNews();
-    const interval = setInterval(silentRefresh, 15 * 60 * 1000);
+    fetchNews('en');
+  }, [fetchNews]);
+
+  useEffect(() => {
+    const interval = setInterval(() => silentRefresh(lang), 15 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [fetchNews, silentRefresh]);
+  }, [lang, silentRefresh]);
 
   const filtered = allNews
     .filter(n => category === 'All' || n.category === category)
@@ -81,16 +100,19 @@ export default function NewsFeed() {
       return sort === 'newest' ? diff : -diff;
     });
 
+  const isTamil = lang === 'ta';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
 
-      {/* Sticky filter + sort bar */}
+      {/* Sticky filter bar */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 10,
         background: 'rgba(245,247,250,0.93)',
         backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
         paddingTop: 12, paddingBottom: 10, marginBottom: 20,
       }}>
+        {/* Row 1: Category pills + sort */}
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 }}>
           {CATEGORIES.map(c => (
             <button key={c.value} onClick={() => setCategory(c.value)} style={{
@@ -102,10 +124,9 @@ export default function NewsFeed() {
               fontWeight: category === c.value ? 600 : 400,
               cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
             }}>
-              {c.label}
+              {isTamil ? c.labelTa : c.label}
             </button>
           ))}
-
           <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
             <button onClick={() => setSort(s => s === 'newest' ? 'oldest' : 'newest')} style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -117,67 +138,93 @@ export default function NewsFeed() {
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                 {sort === 'newest'
                   ? <path d="M2 3h9M2 6.5h6M2 10h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  : <path d="M2 3h3M2 6.5h6M2 10h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                }
+                  : <path d="M2 3h3M2 6.5h6M2 10h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>}
               </svg>
-              {sort === 'newest' ? 'Newest' : 'Oldest'}
+              {isTamil ? (sort === 'newest' ? 'புதியது' : 'பழையது') : (sort === 'newest' ? 'Newest' : 'Oldest')}
             </button>
           </div>
         </div>
 
-        {/* Updated time + new articles badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, paddingLeft: 2 }}>
-          {lastUpdated && (
-            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              Updated {formatUpdated(lastUpdated)}
-            </p>
-          )}
-          {newBadge > 0 && (
-            <button onClick={() => { setNewBadge(0); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-              style={{
-                fontSize: 11, fontWeight: 600, color: '#fff',
-                background: 'var(--accent)', border: 'none',
-                padding: '2px 10px', borderRadius: 20, cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-              }}>
-              +{newBadge} new ↑
-            </button>
-          )}
+        {/* Row 2: Updated time + new badge + language toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, paddingLeft: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {lastUpdated && (
+              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {isTamil ? 'புதுப்பிக்கப்பட்டது' : 'Updated'} {formatUpdated(lastUpdated)}
+              </p>
+            )}
+            {newBadge > 0 && (
+              <button
+                onClick={() => { setNewBadge(0); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                style={{ fontSize: 11, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', padding: '2px 10px', borderRadius: 20, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+              >
+                +{newBadge} {isTamil ? 'புதியவை ↑' : 'new ↑'}
+              </button>
+            )}
+          </div>
+
+          {/* Language toggle */}
+          <button
+            onClick={handleLangToggle}
+            disabled={langLoading}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '6px 14px', borderRadius: 20,
+              border: '1.5px solid var(--primary)',
+              background: isTamil ? 'var(--primary)' : 'transparent',
+              color: isTamil ? '#fff' : 'var(--primary)',
+              fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600,
+              cursor: langLoading ? 'wait' : 'pointer',
+              transition: 'all 0.2s', opacity: langLoading ? 0.6 : 1,
+              flexShrink: 0,
+            }}
+          >
+            {langLoading ? (
+              <span style={{ fontSize: 11 }}>...</span>
+            ) : (
+              <>
+                <span style={{ fontSize: 13 }}>அ</span>
+                {isTamil ? 'தமிழ்' : 'Tamil'}
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Feed states */}
-      {loading ? (
+      {/* Feed */}
+      {loading || langLoading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {[1,2,3].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : error ? (
         <div style={{ textAlign: 'center', padding: '48px 24px', background: 'var(--surface)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
           <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>{error}</p>
-          <button onClick={fetchNews} style={{ padding: '10px 24px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 20, fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
-            Try Again
+          <button onClick={() => fetchNews(lang)} style={{ padding: '10px 24px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 20, fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+            {isTamil ? 'மீண்டும் முயற்சி' : 'Try Again'}
           </button>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px 24px', background: 'var(--surface)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
           <p style={{ fontSize: 28, marginBottom: 12 }}>🌅</p>
           <p style={{ fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>
-            Today&apos;s news is on its way
+            {isTamil ? 'இன்றைய செய்திகள் வருகின்றன' : "Today's news is on its way"}
           </p>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Fresh news for {category === 'All' ? 'all categories' : category} will appear here
-            as it gets published today. Check back in a little while.
+            {isTamil
+              ? 'இன்று புதிய செய்திகள் வெளியிடப்படும்போது இங்கே தோன்றும். கொஞ்சம் நேரம் கழித்து சரிபாருங்கள்.'
+              : `Fresh news for ${category === 'All' ? 'all categories' : category} will appear here as it gets published today. Check back in a little while.`
+            }
           </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {filtered.map((card, i) => <NewsCard key={card.id} card={card} index={i} />)}
+          {filtered.map((card, i) => <NewsCard key={card.id} card={card} index={i} lang={lang} />)}
         </div>
       )}
 
-      {!loading && !error && filtered.length > 0 && (
+      {!loading && !langLoading && !error && filtered.length > 0 && (
         <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', padding: '24px 0 8px' }}>
-          {filtered.length} article{filtered.length !== 1 ? 's' : ''} today
+          {filtered.length} {isTamil ? 'கட்டுரைகள் இன்று' : `article${filtered.length !== 1 ? 's' : ''} today`}
         </p>
       )}
     </div>

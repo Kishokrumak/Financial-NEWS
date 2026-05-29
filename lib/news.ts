@@ -1,6 +1,7 @@
 import { kv } from '@vercel/kv';
 
 export type Category = 'Stocks & Equity' | 'Mutual Funds' | 'Gold & Silver' | 'Economy & RBI';
+export type Language = 'en' | 'ta';
 
 export interface NewsCard {
   id: string;
@@ -23,11 +24,13 @@ interface RawArticle {
 interface DailyCache {
   date: string;
   news: NewsCard[];
+  newsTamil: NewsCard[];   // Tamil versions stored separately
   builtAt: string;
   processedUrls: string[];
 }
 
-const CACHE_KEY = 'fews:daily-news';
+// One cache key — stores both English and Tamil
+const CACHE_KEY = 'fews:daily-news-v2';
 
 // ---------- IST helpers ----------
 function getISTDateString(): string {
@@ -50,7 +53,7 @@ function isRecentEnough(isoString: string): boolean {
   } catch { return true; }
 }
 
-// ---------- Shared KV cache — same data for ALL server instances ----------
+// ---------- Shared KV cache ----------
 async function readCache(): Promise<DailyCache | null> {
   try {
     const cache = await kv.get<DailyCache>(CACHE_KEY);
@@ -62,7 +65,6 @@ async function readCache(): Promise<DailyCache | null> {
 
 async function writeCache(cache: DailyCache): Promise<void> {
   try {
-    // Expire at end of day — 30 hours is safe enough
     await kv.set(CACHE_KEY, cache, { ex: 30 * 60 * 60 });
   } catch (e) { console.error('KV write failed:', e); }
 }
@@ -92,7 +94,7 @@ const CATEGORY_QUERIES: Record<Category, string[]> = {
   ],
 };
 
-// ---------- Finance relevance ----------
+// ---------- Finance relevance filter ----------
 const FINANCE_KEYWORDS = [
   'stock','share','nifty','sensex','bse','nse','market','invest',
   'mutual fund','sip','nav','equity','debt','fund',
@@ -110,10 +112,26 @@ const BLOCK_KEYWORDS = [
   'wedding','film','movie','music','actor','actress',
 ];
 
+// Phrases that indicate stock promotion — strip or reject bullets containing these
+const PROMOTION_PHRASES = [
+  'buy ', 'sell ', 'buy now', 'strong buy', 'must buy', 'time to buy',
+  'add to portfolio', 'good time to invest', 'recommend', 'target price',
+  'should invest', 'consider buying', 'consider investing', 'worth buying',
+  'opportunity to buy', 'investors should buy', 'good investment',
+];
+
 function isFinanceRelated(a: RawArticle): boolean {
   const text = `${a.title} ${a.description}`.toLowerCase();
   if (BLOCK_KEYWORDS.some(kw => text.includes(kw))) return false;
   return FINANCE_KEYWORDS.some(kw => text.includes(kw));
+}
+
+// Remove any bullet that promotes buying/selling a specific stock
+function stripPromotionalBullets(bullets: string[]): string[] {
+  return bullets.filter(bullet => {
+    const lower = bullet.toLowerCase();
+    return !PROMOTION_PHRASES.some(phrase => lower.includes(phrase));
+  });
 }
 
 // ---------- Deduplication ----------
@@ -204,16 +222,51 @@ async function fetchFromGNews(queries: string[]): Promise<RawArticle[]> {
   } catch { return []; }
 }
 
-// ---------- AI rewrite (called ONCE per article, result stored in KV) ----------
-async function rewriteWithAI(article: RawArticle, category: Category): Promise<string[]> {
+// ---------- AI rewrite — called ONCE per article, both languages at once ----------
+async function rewriteWithAI(
+  article: RawArticle,
+  category: Category,
+): Promise<{ en: string[]; ta: string[] }> {
   const key = process.env.ANTHROPIC_API_KEY;
+
+  // Fallback when no API key
   if (!key) {
     const sentences = article.description
       .split(/(?<=[.!?])\s+/)
       .filter(s => s.length > 20)
       .slice(0, 4);
-    return sentences.length > 0 ? sentences : [article.description.slice(0, 200)];
+    const fallback = sentences.length > 0 ? sentences : [article.description.slice(0, 200)];
+    return { en: fallback, ta: fallback };
   }
+
+  const prompt = `You are a financial news summarizer for FEWS, an Indian finance news app for beginners.
+
+Article Title: ${article.title}
+Article Content: ${article.description}
+Category: ${category}
+
+Your task: Rewrite this news as bullet points in TWO languages.
+
+STRICT RULES (apply to both languages):
+- Do NOT recommend buying or selling any stock, fund, or asset
+- Do NOT say things like "investors should buy", "good time to invest", "target price", "strong buy"
+- Report facts only — what happened, what it means in context, no opinions or advice
+- Write for a first-time Indian retail investor — simple, clear language
+- Exactly 3-4 bullet points per language
+- Each bullet is 1 sentence
+
+Return ONLY this exact format, nothing else:
+
+ENGLISH:
+- bullet 1
+- bullet 2
+- bullet 3
+
+TAMIL:
+- bullet 1 in Tamil
+- bullet 2 in Tamil
+- bullet 3 in Tamil`;
+
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -224,30 +277,35 @@ async function rewriteWithAI(article: RawArticle, category: Category): Promise<s
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 300,
-        messages: [{
-          role: 'user',
-          content: `You are a financial news summarizer for FEWS, an Indian finance news app for beginners.
-
-Article Title: ${article.title}
-Article Content: ${article.description}
-Category: ${category}
-
-Rewrite as exactly 3-4 bullet points in simple beginner-friendly English for an Indian retail investor.
-Each bullet: 1 clear sentence, avoids jargon, factual and concise.
-Return ONLY bullet points, one per line, starting with dash (-). No intro, no conclusion.`,
-        }],
+        max_tokens: 600, // doubled to fit both languages
+        messages: [{ role: 'user', content: prompt }],
       }),
     });
     const data = await res.json();
     const text: string = data.content?.[0]?.text || '';
-    const bullets = text
-      .split('\n')
-      .map((l: string) => l.replace(/^[-•*]\s*/, '').trim())
-      .filter((l: string) => l.length > 10);
-    return bullets.slice(0, 4);
+
+    // Parse ENGLISH section
+    const enMatch = text.match(/ENGLISH:\s*([\s\S]*?)(?=TAMIL:|$)/i);
+    const taMatch = text.match(/TAMIL:\s*([\s\S]*?)$/i);
+
+    const parseBullets = (block: string): string[] =>
+      (block || '')
+        .split('\n')
+        .map(l => l.replace(/^[-•*]\s*/, '').trim())
+        .filter(l => l.length > 10)
+        .slice(0, 4);
+
+    const enBullets = stripPromotionalBullets(parseBullets(enMatch?.[1] || ''));
+    const taBullets = parseBullets(taMatch?.[1] || '');
+
+    // Fallback to English if Tamil parsing failed
+    return {
+      en: enBullets.length > 0 ? enBullets : [article.description.slice(0, 200)],
+      ta: taBullets.length > 0 ? taBullets : enBullets,
+    };
   } catch {
-    return [article.description.slice(0, 300)];
+    const fallback = [article.description.slice(0, 300)];
+    return { en: fallback, ta: fallback };
   }
 }
 
@@ -274,104 +332,132 @@ function globalDedup(cards: NewsCard[]): NewsCard[] {
   });
 }
 
-// ---------- Process only NEW articles — never rewrites existing ones ----------
+// ---------- Process only NEW articles — returns both EN and TA cards ----------
 async function processNewArticles(
   freshRaw: RawArticle[],
   category: Category,
   alreadyProcessedUrls: Set<string>,
-  existingCards: NewsCard[],
-): Promise<NewsCard[]> {
+  existingEnCards: NewsCard[],
+  existingTaCards: NewsCard[],
+): Promise<{ en: NewsCard[]; ta: NewsCard[] }> {
   const newRaw = freshRaw.filter(a => !alreadyProcessedUrls.has(a.url));
-  if (newRaw.length === 0) return existingCards;
-  const newCards = await Promise.all(
+  if (newRaw.length === 0) return { en: existingEnCards, ta: existingTaCards };
+
+  const results = await Promise.all(
     newRaw.slice(0, 10).map(async (article, i) => {
-      const bullets = await rewriteWithAI(article, category);
-      return {
+      const { en, ta } = await rewriteWithAI(article, category);
+      const base = {
         id: `${category.replace(/\s+/g, '-')}-${Date.now()}-${i}`,
         title: article.title,
-        bullets,
         sourceUrl: article.url,
         sourceName: article.source,
         category,
         publishedAt: article.publishedAt,
-      } satisfies NewsCard;
+      };
+      return {
+        en: { ...base, bullets: en } satisfies NewsCard,
+        ta: { ...base, bullets: ta } satisfies NewsCard,
+      };
     })
   );
-  return [...existingCards, ...newCards.filter(c => c.bullets.length > 0)];
+
+  const validResults = results.filter(r => r.en.bullets.length > 0);
+  return {
+    en: [...existingEnCards, ...validResults.map(r => r.en)],
+    ta: [...existingTaCards, ...validResults.map(r => r.ta)],
+  };
 }
 
 // ---------- Public API ----------
 
-// Serves from shared KV cache — zero Claude calls on user visits
-export async function getAllNews(): Promise<{ news: NewsCard[]; builtAt: string; fromCache: boolean }> {
+export async function getAllNews(lang: Language = 'en'): Promise<{ news: NewsCard[]; builtAt: string; fromCache: boolean }> {
   const cached = await readCache();
-  if (cached) return { news: cached.news, builtAt: cached.builtAt, fromCache: true };
-  const { news, builtAt } = await forceRefreshNews();
-  return { news, builtAt, fromCache: false };
+  if (cached) {
+    const news = lang === 'ta' ? cached.newsTamil : cached.news;
+    return { news, builtAt: cached.builtAt, fromCache: true };
+  }
+  const { news, newsTamil, builtAt } = await forceRefreshNews();
+  return { news: lang === 'ta' ? newsTamil : news, builtAt, fromCache: false };
 }
 
-// Incremental — checks for new articles, only rewrites ones not already processed
-export async function incrementalRefresh(): Promise<{ news: NewsCard[]; builtAt: string; newCount: number }> {
+export async function incrementalRefresh(): Promise<{ news: NewsCard[]; newsTamil: NewsCard[]; builtAt: string; newCount: number }> {
   const categories: Category[] = ['Stocks & Equity', 'Mutual Funds', 'Gold & Silver', 'Economy & RBI'];
   const cached = await readCache();
 
   if (!cached || cached.date !== getISTDateString()) {
-    const result = await forceRefreshNews();
-    return { ...result, newCount: result.news.length };
+    return forceRefreshNews();
   }
 
   const alreadyProcessedUrls = new Set(cached.processedUrls || []);
   const previousCount = cached.news.length;
-  let updatedNews = [...cached.news];
+  let updatedEn = [...cached.news];
+  let updatedTa = [...(cached.newsTamil || [])];
 
   for (const category of categories) {
     const freshRaw = await fetchRawForCategory(category);
-    const categoryCards = updatedNews.filter(n => n.category === category);
-    const updated = await processNewArticles(freshRaw, category, alreadyProcessedUrls, categoryCards);
-    updatedNews = [...updatedNews.filter(n => n.category !== category), ...updated];
+    const { en, ta } = await processNewArticles(
+      freshRaw, category, alreadyProcessedUrls,
+      updatedEn.filter(n => n.category === category),
+      updatedTa.filter(n => n.category === category),
+    );
+    updatedEn = [...updatedEn.filter(n => n.category !== category), ...en];
+    updatedTa = [...updatedTa.filter(n => n.category !== category), ...ta];
     freshRaw.forEach(a => alreadyProcessedUrls.add(a.url));
   }
 
-  const deduped = globalDedup(updatedNews)
-    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  const sort = (cards: NewsCard[]) =>
+    globalDedup(cards).sort((a, b) =>
+      new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+    );
+
+  const sortedEn = sort(updatedEn);
+  const sortedTa = sort(updatedTa);
 
   await writeCache({
     date: getISTDateString(),
-    news: deduped,
+    news: sortedEn,
+    newsTamil: sortedTa,
     builtAt: new Date().toISOString(),
     processedUrls: Array.from(alreadyProcessedUrls),
   });
 
-  return { news: deduped, builtAt: new Date().toISOString(), newCount: deduped.length - previousCount };
+  return { news: sortedEn, newsTamil: sortedTa, builtAt: new Date().toISOString(), newCount: sortedEn.length - previousCount };
 }
 
-// Full rebuild — called by midnight cron, clears old cache
-export async function forceRefreshNews(): Promise<{ news: NewsCard[]; builtAt: string }> {
+export async function forceRefreshNews(): Promise<{ news: NewsCard[]; newsTamil: NewsCard[]; builtAt: string }> {
   console.log('[FEWS] Full rebuild — clearing KV cache...');
   await clearCache();
 
   const categories: Category[] = ['Stocks & Equity', 'Mutual Funds', 'Gold & Silver', 'Economy & RBI'];
   const processedUrls = new Set<string>();
-  const allCards: NewsCard[] = [];
+  const allEn: NewsCard[] = [];
+  const allTa: NewsCard[] = [];
 
   for (const category of categories) {
     const freshRaw = await fetchRawForCategory(category);
     freshRaw.forEach(a => processedUrls.add(a.url));
-    const cards = await processNewArticles(freshRaw, category, new Set(), []);
-    allCards.push(...cards);
+    const { en, ta } = await processNewArticles(freshRaw, category, new Set(), [], []);
+    allEn.push(...en);
+    allTa.push(...ta);
   }
 
-  const deduped = globalDedup(allCards)
-    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  const sort = (cards: NewsCard[]) =>
+    globalDedup(cards).sort((a, b) =>
+      new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+    );
 
-  const cache: DailyCache = {
+  const sortedEn = sort(allEn);
+  const sortedTa = sort(allTa);
+  const builtAt = new Date().toISOString();
+
+  await writeCache({
     date: getISTDateString(),
-    news: deduped,
-    builtAt: new Date().toISOString(),
+    news: sortedEn,
+    newsTamil: sortedTa,
+    builtAt,
     processedUrls: Array.from(processedUrls),
-  };
-  await writeCache(cache);
+  });
 
-  console.log(`[FEWS] Rebuilt with ${deduped.length} articles.`);
-  return { news: deduped, builtAt: cache.builtAt };
+  console.log(`[FEWS] Rebuilt with ${sortedEn.length} articles.`);
+  return { news: sortedEn, newsTamil: sortedTa, builtAt };
 }

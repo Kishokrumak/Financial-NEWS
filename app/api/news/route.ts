@@ -1,11 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getAllNews } from '@/lib/news';
+import type { Language } from '@/lib/news';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const { news, builtAt, fromCache } = await getAllNews();
+    const lang = (req.nextUrl.searchParams.get('lang') || 'en') as Language;
+    const { news, builtAt, fromCache } = await getAllNews(lang);
     return NextResponse.json({ news, updatedAt: builtAt, fromCache });
   } catch (error) {
     console.error('Failed to fetch news:', error);
