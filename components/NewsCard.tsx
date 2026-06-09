@@ -43,7 +43,8 @@ export default function NewsCard({ card, index, lang = 'en' }: { card: NewsCardT
       display: 'flex', flexDirection: 'column', gap: 16,
       border: '1px solid var(--border)', width: '100%',
     }}>
-      {/* Category + date */}
+
+      {/* Row 1: Category pill + date */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <span className={style.pill} style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>
           {isTamil ? style.labelTa : style.label}
@@ -53,15 +54,29 @@ export default function NewsCard({ card, index, lang = 'en' }: { card: NewsCardT
         </time>
       </div>
 
-      {/* Title — always in English (source title) */}
+      {/* Title */}
       <h2 style={{ fontFamily: 'var(--font-title)', fontSize: 'clamp(17px,4.5vw,20px)', fontWeight: 600, lineHeight: 1.35, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
         {card.title}
       </h2>
 
+      {/* AI Summary label — required for Google AdSense compliance */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <circle cx="6.5" cy="6.5" r="5.5" stroke="#3176FF" strokeWidth="1.3"/>
+          <path d="M4 6.5l1.8 1.8L9 4.5" stroke="#3176FF" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600, letterSpacing: '0.04em' }}>
+          {isTamil ? 'FEWS-ஆல் AI சுருக்கம்' : 'AI Summary by FEWS'}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          · {isTamil ? 'மூல கட்டுரை' : `Source: ${card.sourceName}`}
+        </span>
+      </div>
+
       {/* Bullet points — in chosen language */}
       <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {card.bullets.map((bullet, i) => (
-          <li key={i} style={{ display: 'flex', gap: 10, fontSize: 14, lineHeight: 1.7, color: 'var(--text-secondary)', direction: isTamil ? 'ltr' : 'ltr' }}>
+          <li key={i} style={{ display: 'flex', gap: 10, fontSize: 14, lineHeight: 1.7, color: 'var(--text-secondary)' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, marginTop: 8 }} />
             <span style={{ fontFamily: isTamil ? "'Noto Sans Tamil', 'Latha', sans-serif" : 'var(--font-body)' }}>
               {bullet}
@@ -76,8 +91,8 @@ export default function NewsCard({ card, index, lang = 'en' }: { card: NewsCardT
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <a href={card.sourceUrl} target="_blank" rel="noopener noreferrer"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--primary)', fontWeight: 500, textDecoration: 'none', padding: '6px 12px', borderRadius: 20, border: '1.5px solid var(--primary)', transition: 'background 0.15s, color 0.15s' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='var(--primary)'; (e.currentTarget as HTMLElement).style.color='#fff'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='transparent'; (e.currentTarget as HTMLElement).style.color='var(--primary)'; }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--primary)'; (e.currentTarget as HTMLElement).style.color = '#fff'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--primary)'; }}
         >
           {isTamil ? 'முழு கட்டுரை' : 'Read Full Article'}
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
