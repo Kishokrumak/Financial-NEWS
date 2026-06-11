@@ -28,6 +28,8 @@ export default function Home() {
         </p>
         <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 4 }}>
           News sourced from public APIs · AI-summarized for clarity ·{' '}
+          <a href="/about" style={{ color: 'var(--secondary)', textDecoration: 'none' }}>About</a>
+          {' · '}
           <a href="/disclaimer" style={{ color: 'var(--secondary)', textDecoration: 'none' }}>Disclaimer</a>
           {' · '}
           <a href="/privacy" style={{ color: 'var(--secondary)', textDecoration: 'none' }}>Privacy Policy</a>
